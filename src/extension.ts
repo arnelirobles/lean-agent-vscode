@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFile } from "node:child_process";
 import * as vscode from "vscode";
 import * as cli from "./brainCli";
-import { answerPrompt, answerRoute, canSend, validSession } from "./claude";
+import { answerPrompt, answerRoute, canSend, resolveClaude, validSession } from "./claude";
 import * as db from "./db";
 import { openPage, type Host } from "./page";
+import { checkPlugins, type SetupHost } from "./setup";
 import { Store } from "./store";
 import { projectNames } from "./workspace";
 import { ItemsTree, itemFromArg } from "./views/itemsTree";
@@ -24,6 +26,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const testsStore = new Store(wasm, "tests.db");
   const dbs = (): db.Dbs => ({ brain: brainStore.database, tests: testsStore.database });
   const notes = (): string => [brainStore.note, testsStore.note, db.schemaNote(dbs())].filter(Boolean).join(" ");
+  const log = vscode.window.createOutputChannel("Lean Brain");
+  ctx.subscriptions.push(log);
   const items = new ItemsTree();
   const queueTree = new QueueTree();
   const status = new StatusBar();
@@ -142,10 +146,11 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand("leanBrain.anyLane", (arg) => route(arg, "any")),
     vscode.commands.registerCommand("leanBrain.moveUp", (arg) => move(arg, "up")),
     vscode.commands.registerCommand("leanBrain.moveDown", (arg) => move(arg, "down")),
+    vscode.commands.registerCommand("leanBrain.installPlugins", () => setup(true)),
     vscode.commands.registerCommand("leanBrain.showResume", async () => {
       const brain = findOrWarn();
       if (!brain) return;
-      const out = vscode.window.createOutputChannel("Lean Brain");
+      const out = log;
       const r = await cli.runBrain(brain, cli.resumeArgs(projects[0]), dbPath(), folder);
       out.clear();
       out.appendLine(r.ok ? r.stdout.trim() || "Nothing open for this project." : `brain failed: ${r.stderr}`);
@@ -248,6 +253,27 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }
   }
   ctx.subscriptions.push({ dispose: () => { for (const w of watchers) w.close(); if (debounce) clearTimeout(debounce); } });
+
+  function setup(manual: boolean): Promise<void> {
+    const isExec = (p: string) => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
+    const host: SetupHost = {
+      claude: resolveClaude(userSetting("claudeCommand"), process.env.PATH ?? "", isExec),
+      run: (cmd, args, timeoutMs) => new Promise((resolve, reject) => {
+        execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+          if (!err) return resolve({ code: 0, stdout });
+          const code = (err as { code?: unknown }).code;
+          if (typeof code === "number") resolve({ code, stdout });
+          else reject(err);
+        });
+      }),
+      ask: (text, ...buttons) => vscode.window.showInformationMessage(text, ...buttons),
+      terminal: (name) => vscode.window.createTerminal({ name }),
+      copy: (text) => vscode.env.clipboard.writeText(text),
+      log: (line) => log.appendLine(line),
+    };
+    return checkPlugins(host, manual).catch((e) => log.appendLine(`plugin check failed: ${e instanceof Error ? e.message : String(e)}`));
+  }
+  void setup(false);
 
   await Promise.all([brainStore.init(), testsStore.init()]);
   watch();

@@ -21,8 +21,10 @@ It refreshes 2 seconds after brain.db or tests.db (or their -wal files) change, 
 ```
 npm ci
 npm run package
-code --install-extension lean-brain-0.5.0.vsix
+code --install-extension lean-brain-1.0.0.vsix
 ```
+
+On start the extension checks for the lean-agent, lean-agent-tools and brain plugins and offers to install any that are missing. Run `Lean Brain: Install missing plugins` to check again.
 
 The fonts in `media/fonts` (Plus Jakarta Sans, IBM Plex Mono) are licensed under the SIL Open Font License 1.1; each ships with its license text beside it.
 
@@ -36,5 +38,6 @@ MPL-2.0.
 
 - `leanBrain.dbPath`: path to brain.db. Empty uses `LEAN_BRAIN_DB`, then `~/.local/share/lean/brain.db`.
 - `leanBrain.testsDbPath`: path to tests.db, which holds the test queue and runs. Empty uses `LEAN_TESTS_DB`, then `~/.local/share/lean/tests.db`.
-- `leanBrain.brainPath`: path to `tools/brain`. Empty uses `brain` on PATH, then the newest lean-agent plugin in `~/.claude/plugins/cache/lean-agent-tools/lean-agent-tools/*/tools/brain` (`bin/brain` for plugin versions before 1.16.0).
+- `leanBrain.brainPath`: path to `tools/brain`. Empty uses `brain` on PATH, then the newest brain plugin in `~/.claude/plugins/cache/*/brain/*/tools/brain`.
+- `leanBrain.testPhasePath`: path to `tools/test-phase`, which runs queue move and route. Empty uses `test-phase` on PATH, then the newest lean-agent-tools plugin.
 - `leanBrain.claudeCommand`: path to the claude executable. Empty uses the absolute PATH entries, then `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` and `/usr/local/bin`, since an editor started from the Dock does not get the shell's PATH.

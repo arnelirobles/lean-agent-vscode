@@ -39,6 +39,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "leanBrain.installPlugins",
+        "title": "Lean Brain: Install missing plugins"
+      },
+      {
         "command": "leanBrain.showResume",
         "title": "Lean Brain: Show resume digest"
       },
