@@ -263,7 +263,7 @@ describe("reading brain.db and tests.db", () => {
   });
 
   it("drops the tests.db banner when the queue view already explains it, and keeps brain's note", () => {
-    const notes = (db as any).statusNotes as (d: Dbs, brain: string, tests: string, testsMissing: boolean) => string;
+    const notes = db.statusNotes;
     const banner = "No tests.db database at /x/tests.db.";
     expect(notes({}, "No brain.db database at /x/brain.db.", banner, true)).toBe("No brain.db database at /x/brain.db.");
     expect(notes({}, "", banner, true)).toBe("");

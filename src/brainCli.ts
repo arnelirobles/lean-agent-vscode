@@ -5,6 +5,12 @@ import * as path from "node:path";
 
 // Runs tools/brain and test-phase with argument arrays. No shell. This is the only way the extension changes anything.
 
+/** text trimmed, without one leading "test-phase: " (test-phase's own messages carry it, and callers add it too). */
+export function unprefix(text: string): string {
+  const t = text.trim();
+  return t.startsWith("test-phase: ") ? t.slice("test-phase: ".length) : t;
+}
+
 export function defaultDbPath(setting: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
   return setting || env.LEAN_BRAIN_DB || path.join(home, ".local", "share", "lean", "brain.db");
 }

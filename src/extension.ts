@@ -25,7 +25,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const brainStore = new Store(wasm, "brain.db");
   const testsStore = new Store(wasm, "tests.db");
   const dbs = (): db.Dbs => ({ brain: brainStore.database, tests: testsStore.database });
-  const notes = (): string => [brainStore.note, testsStore.note, db.schemaNote(dbs())].filter(Boolean).join(" ");
+  const notes = (): string => db.statusNotes(dbs(), brainStore.note, testsStore.note, testsStore.missing);
   const log = vscode.window.createOutputChannel("Lean Brain");
   ctx.subscriptions.push(log);
   const items = new ItemsTree();
@@ -209,7 +209,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     const tp = findTestPhaseOrWarn();
     if (!tp) return;
     const r = await cli.runTestPhase(tp, cli.routeArgs(id, to), testsDbPath(), folder);
-    if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${r.stderr.trim()}`);
+    if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${cli.unprefix(r.stderr)}`);
     else if (r.stderr.trim()) void vscode.window.showWarningMessage(r.stderr.trim());
     await refresh();
   }
@@ -224,7 +224,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     const tp = findTestPhaseOrWarn();
     if (!tp) return;
     const r = await cli.runTestPhase(tp, cli.moveArgs(id, where), testsDbPath(), folder);
-    if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${r.stderr.trim()}`);
+    if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${cli.unprefix(r.stderr)}`);
     await refresh();
   }
 

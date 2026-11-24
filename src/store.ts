@@ -7,6 +7,7 @@ export class Store {
   private db?: Database;
   lastGood = 0;
   note = "";
+  missing = false;
 
   constructor(private readonly wasmPath: string, private readonly label = "brain") {}
 
@@ -32,6 +33,7 @@ export class Store {
       this.db?.close();
       this.db = undefined;
       this.note = `No ${this.label} database at ${file}.`;
+      this.missing = true;
       return false;
     }
     let lastErr: unknown;
@@ -42,12 +44,14 @@ export class Store {
         this.db = next;
         this.lastGood = Date.now();
         this.note = "";
+        this.missing = false;
         return true;
       } catch (e) {
         lastErr = e;
         if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
       }
     }
+    this.missing = false;
     const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
     this.note = this.db
       ? `The ${this.label} database could not be read (${msg}). Showing the last good data from ${new Date(this.lastGood).toLocaleTimeString("en-GB")}.`

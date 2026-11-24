@@ -55,7 +55,14 @@ export function itemsMessage(dbs: Dbs): string {
 }
 
 export function queueMessage(dbs: Dbs): string {
-  return dbs.tests ? "" : "Install lean-agent-tools to see the test queue.";
+  if (dbs.tests) return "";
+  if (dbs.brain && one(dbs.brain, Q.HAS_JOBS)) return "Run `test-phase queue import` once to move the queue to tests.db.";
+  return "Install lean-agent-tools to see the test queue.";
+}
+
+/** The notes the views show. A missing tests.db is already explained by queueMessage, so its banner is left out. */
+export function statusNotes(dbs: Dbs, brainNote: string, testsNote: string, testsMissing: boolean): string {
+  return [brainNote, testsMissing ? "" : testsNote, schemaNote(dbs)].filter(Boolean).join(" ");
 }
 
 /** Empty when both files are at a schema this extension knows. */

@@ -2,8 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import * as cliMod from "../src/brainCli";
-import { answerArgs, closeArgs, defaultDbPath, findBrain, findTestPhase, moveArgs, reopenArgs, resumeArgs, routeArgs, runTestPhase, testPhaseCanMove } from "../src/brainCli";
+import { answerArgs, closeArgs, defaultDbPath, findBrain, findTestPhase, moveArgs, reopenArgs, resumeArgs, routeArgs, runTestPhase, testPhaseCanMove, unprefix } from "../src/brainCli";
 
 function exe(p: string) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -111,7 +110,6 @@ describe("brain cli", () => {
   });
 
   it("strips one leading test-phase: so the caller's own prefix shows once", () => {
-    const unprefix = (cliMod as any).unprefix as (text: string) => string;
     expect(unprefix("test-phase: x")).toBe("x");
     expect(unprefix("x")).toBe("x");
     expect(unprefix("test-phase: test-phase: x")).toBe("test-phase: x");
