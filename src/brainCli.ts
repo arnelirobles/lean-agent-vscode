@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-// Runs tools/brain with argument arrays. No shell. This is the only way the extension changes anything.
+// Runs tools/brain and test-phase with argument arrays. No shell. This is the only way the extension changes anything.
 
 export function defaultDbPath(setting: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
   return setting || env.LEAN_BRAIN_DB || path.join(home, ".local", "share", "lean", "brain.db");
@@ -33,29 +33,49 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** brainPath setting, else `brain` on PATH, else the newest lean-agent plugin in the Claude plugin cache. */
-export function findBrain(setting: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string | undefined {
-  if (setting) return isExecutable(setting) ? setting : undefined;
-  for (const dir of (env.PATH ?? "").split(path.delimiter)) {
-    if (!dir) continue;
-    const p = path.join(dir, "brain");
-    if (isExecutable(p)) return p;
-  }
-  const root = path.join(home, ".claude", "plugins", "cache", "lean-agent-tools", "lean-agent-tools");
-  let versions: string[] = [];
+/** Newest installed plugin tool: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/tools/<tool>. */
+function newestInCache(home: string, plugin: string, tool: string): string | undefined {
+  const cache = path.join(home, ".claude", "plugins", "cache");
+  let found: { v: string; p: string }[] = [];
   try {
-    versions = fs.readdirSync(root);
+    for (const market of fs.readdirSync(cache)) {
+      const root = path.join(cache, market, plugin);
+      let versions: string[] = [];
+      try {
+        versions = fs.readdirSync(root);
+      } catch {
+        continue;
+      }
+      for (const v of versions) {
+        const p = path.join(root, v, "tools", tool);
+        if (isExecutable(p)) found.push({ v, p });
+      }
+    }
   } catch {
     return undefined;
   }
-  versions.sort(compareVersions);
-  for (const v of versions.reverse()) {
-    for (const dir of ["tools", "bin"]) {
-      const p = path.join(root, v, dir, "brain");
-      if (isExecutable(p)) return p;
-    }
+  found.sort((x, y) => compareVersions(y.v, x.v));
+  return found[0]?.p;
+}
+
+function findTool(name: string, plugin: string, setting: string, env: NodeJS.ProcessEnv, home: string): string | undefined {
+  if (setting) return isExecutable(setting) ? setting : undefined;
+  for (const dir of (env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const p = path.join(dir, name);
+    if (isExecutable(p)) return p;
   }
-  return undefined;
+  return newestInCache(home, plugin, name);
+}
+
+/** brainPath setting, else `brain` on PATH, else the newest brain plugin in any marketplace folder of the Claude plugin cache. */
+export function findBrain(setting: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string | undefined {
+  return findTool("brain", "brain", setting, env, home);
+}
+
+/** testPhasePath setting, else `test-phase` on PATH, else the newest lean-agent-tools plugin in the Claude plugin cache. */
+export function findTestPhase(setting: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string | undefined {
+  return findTool("test-phase", "lean-agent-tools", setting, env, home);
 }
 
 export interface CliResult { ok: boolean; stdout: string; stderr: string }
@@ -63,6 +83,13 @@ export interface CliResult { ok: boolean; stdout: string; stderr: string }
 export function runBrain(brain: string, args: string[], dbPath: string, cwd?: string): Promise<CliResult> {
   return new Promise((resolve) => {
     execFile(brain, args, { env: { ...process.env, LEAN_BRAIN_DB: dbPath }, cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr || err?.message || "") }));
+  });
+}
+
+export function runTestPhase(tp: string, args: string[], testsDbPath: string, cwd?: string): Promise<CliResult> {
+  return new Promise((resolve) => {
+    execFile(tp, args, { env: { ...process.env, LEAN_TESTS_DB: testsDbPath }, cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) => resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr || err?.message || "") }));
   });
 }
@@ -91,10 +118,10 @@ export function moveArgs(id: number, where: "up" | "down"): string[] {
   return ["queue", "move", String(id), where];
 }
 
-/** Whether this brain has `queue move`. A brain from before it lists no move in its queue help. */
-export async function brainCanMove(brain: string): Promise<boolean> {
+/** Whether this test-phase has `queue move`. One from before it lists no move in its queue help. */
+export async function testPhaseCanMove(tp: string): Promise<boolean> {
   const r = await new Promise<string>((resolve) =>
-    execFile(brain, ["queue", "--help"], { timeout: 10000 }, (_err, stdout, stderr) => resolve(`${stdout}${stderr}`)));
+    execFile(tp, ["queue", "--help"], { timeout: 10000 }, (_err, stdout, stderr) => resolve(`${stdout}${stderr}`)));
   return /[{,]move[,}]/.test(r);
 }
 

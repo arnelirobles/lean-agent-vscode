@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import * as cli from "./brainCli";
 import { answerPrompt, answerRoute, canSend, validSession } from "./claude";
 import * as db from "./db";
-import { noticeOnce, openPage, type Host } from "./deprecation";
+import { openPage, type Host } from "./page";
 import { Store } from "./store";
 import { projectNames } from "./workspace";
 import { ItemsTree, itemFromArg } from "./views/itemsTree";
@@ -31,12 +31,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (folder) projects = await projectNames(folder);
 
-  // Asked once per brain path: an older brain has no `queue move`, so the up and down buttons stay hidden.
-  let moveCheck: { brain: string; can: Promise<boolean> } | undefined;
+  // Asked once per test-phase path: an older one has no `queue move`, so the up and down buttons stay hidden.
+  let moveCheck: { tp: string; can: Promise<boolean> } | undefined;
   const canMove = (): Promise<boolean> => {
-    const brain = cli.findBrain(userSetting("brainPath"));
-    if (!brain) return Promise.resolve(false);
-    if (moveCheck?.brain !== brain) moveCheck = { brain, can: cli.brainCanMove(brain) };
+    const tp = cli.findTestPhase(userSetting("testPhasePath"));
+    if (!tp) return Promise.resolve(false);
+    if (moveCheck?.tp !== tp) moveCheck = { tp, can: cli.testPhaseCanMove(tp) };
     return moveCheck.can;
   };
   const refresh = async (): Promise<void> => {
@@ -174,6 +174,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     return brain;
   }
 
+  function findTestPhaseOrWarn(): string | undefined {
+    const tp = cli.findTestPhase(userSetting("testPhasePath"));
+    if (!tp) void vscode.window.showWarningMessage("Lean Brain: test-phase not found. Set leanBrain.testPhasePath.");
+    return tp;
+  }
+
   async function change(arg: unknown, action: "close-fixed" | "close-notabug" | "reopen"): Promise<void> {
     const it = itemFromArg(arg);
     if (!it) return;
@@ -195,10 +201,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   }
 
   async function routeJob(id: number, to: "remote" | "local" | "any"): Promise<void> {
-    const brain = findOrWarn();
-    if (!brain) return;
-    const r = await cli.runBrain(brain, cli.routeArgs(id, to), dbPath(), folder);
-    if (!r.ok) void vscode.window.showErrorMessage(`brain: ${r.stderr.trim()}`);
+    const tp = findTestPhaseOrWarn();
+    if (!tp) return;
+    const r = await cli.runTestPhase(tp, cli.routeArgs(id, to), testsDbPath(), folder);
+    if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${r.stderr.trim()}`);
     else if (r.stderr.trim()) void vscode.window.showWarningMessage(r.stderr.trim());
     await refresh();
   }
@@ -210,10 +216,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   }
 
   async function moveJob(id: number, where: "up" | "down"): Promise<void> {
-    const brain = findOrWarn();
-    if (!brain) return;
-    const r = await cli.runBrain(brain, cli.moveArgs(id, where), dbPath(), folder);
-    if (!r.ok) void vscode.window.showErrorMessage(`brain: ${r.stderr.trim()}`);
+    const tp = findTestPhaseOrWarn();
+    if (!tp) return;
+    const r = await cli.runTestPhase(tp, cli.moveArgs(id, where), testsDbPath(), folder);
+    if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${r.stderr.trim()}`);
     await refresh();
   }
 
@@ -243,7 +249,6 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   }
   ctx.subscriptions.push({ dispose: () => { for (const w of watchers) w.close(); if (debounce) clearTimeout(debounce); } });
 
-  void noticeOnce(ctx.globalState, String(ctx.extension.packageJSON.version), pageHost);
   await Promise.all([brainStore.init(), testsStore.init()]);
   watch();
   await refresh();

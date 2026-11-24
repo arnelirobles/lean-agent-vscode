@@ -291,7 +291,13 @@
         "leanBrain.brainPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the tools/brain script. Empty uses a brain on PATH, then tools/brain (or bin/brain before 1.16.0) in the newest installed lean-agent plugin.",
+          "description": "Path to the tools/brain script. Empty uses a brain on PATH, then tools/brain in the newest installed brain plugin, in any marketplace folder.",
+          "scope": "machine"
+        },
+        "leanBrain.testPhasePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the tools/test-phase script, which runs queue move and route. Empty uses a test-phase on PATH, then tools/test-phase in the newest installed lean-agent-tools plugin.",
           "scope": "machine"
         },
         "leanBrain.claudeCommand": {
@@ -324,9 +330,10 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "brainPath, dbPath and testsDbPath are read only from user settings, since a workspace could point them at another program.",
+      "description": "brainPath, testPhasePath, dbPath and testsDbPath are read only from user settings, since a workspace could point them at another program.",
       "restrictedConfigurations": [
         "leanBrain.brainPath",
+        "leanBrain.testPhasePath",
         "leanBrain.dbPath",
         "leanBrain.testsDbPath",
         "leanBrain.claudeCommand"
