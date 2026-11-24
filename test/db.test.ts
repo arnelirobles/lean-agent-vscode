@@ -251,4 +251,22 @@ describe("reading brain.db and tests.db", () => {
     const dbs = { brain: await brainDb(10), tests: await testsDb() };
     expect(db.schemaNote(dbs)).toBe("brain.db is newer than this extension knows. Update Lean Brain.");
   });
+
+  it("tells an upgrader to import the queue when tests.db is missing and brain.db still has jobs", async () => {
+    const brain = await brainDb();
+    brain.run("CREATE TABLE jobs (id INTEGER PRIMARY KEY)");
+    expect(db.queueMessage({ brain })).toBe("Run `test-phase queue import` once to move the queue to tests.db.");
+  });
+
+  it("keeps the install message when tests.db is missing and brain.db has no jobs table", async () => {
+    expect(db.queueMessage({ brain: await brainDb() })).toBe("Install lean-agent-tools to see the test queue.");
+  });
+
+  it("drops the tests.db banner when the queue view already explains it, and keeps brain's note", () => {
+    const notes = (db as any).statusNotes as (d: Dbs, brain: string, tests: string, testsMissing: boolean) => string;
+    const banner = "No tests.db database at /x/tests.db.";
+    expect(notes({}, "No brain.db database at /x/brain.db.", banner, true)).toBe("No brain.db database at /x/brain.db.");
+    expect(notes({}, "", banner, true)).toBe("");
+    expect(notes({}, "", "The tests.db database could not be read (boom).", false)).toBe("The tests.db database could not be read (boom).");
+  });
 });
