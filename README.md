@@ -2,7 +2,7 @@
 
 This panel is deprecated and will be retired. Use the brain page instead: run `tools/brain serve` from the plugin folder and open `http://leanagent.localhost:8770`, or run `Lean Brain: Open brain page`.
 
-A read-mostly dashboard over the lean-agent brain database. It reads the SQLite file and never writes it. The only changes it makes go through `tools/brain` (close, reopen, and closing a question as answered).
+A read-mostly dashboard over the lean-agent brain database. It reads the SQLite file and never writes it. It reads the databases of brain and of lean-agent-tools. The only changes it makes go through `tools/brain` (close, reopen, and closing a question as answered).
 
 ## What it shows
 
@@ -19,7 +19,6 @@ It refreshes 2 seconds after brain.db (or brain.db-wal) changes, and on `Lean Br
 ## Build and install
 
 ```
-cd vscode
 npm ci
 npm run package
 code --install-extension lean-brain-0.5.0.vsix
@@ -28,6 +27,10 @@ code --install-extension lean-brain-0.5.0.vsix
 The fonts in `media/fonts` (Plus Jakarta Sans, IBM Plex Mono) are licensed under the SIL Open Font License 1.1; each ships with its license text beside it.
 
 `npm run build` bundles to `out/`. `npm test` runs the vitest tests. No telemetry and no network calls.
+
+## License
+
+MPL-2.0.
 
 ## Settings
 

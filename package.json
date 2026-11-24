@@ -2,14 +2,13 @@
   "name": "lean-brain",
   "displayName": "Lean Brain",
   "description": "A read-mostly dashboard over the lean-agent brain database.",
-  "version": "0.10.0",
+  "version": "1.0.0",
   "publisher": "baryo-dev",
-  "license": "MIT",
+  "license": "MPL-2.0",
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/arnelirobles/lean-agent.git",
-    "directory": "vscode"
+    "url": "https://github.com/arnelirobles/lean-agent-vscode"
   },
   "engines": {
     "vscode": "^1.90.0"
