@@ -22,3 +22,32 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npx vitest run
+
+  real-databases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BRAIN_REF: v1.0.0
+      TOOLS_REF: v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: arnelirobles/brain
+          ref: ${{ env.BRAIN_REF }}
+          path: brain
+      - uses: actions/checkout@v4
+        with:
+          repository: arnelirobles/lean-agent-tools
+          ref: ${{ env.TOOLS_REF }}
+          path: lean-agent-tools
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: bash scripts/fixture-dbs.sh "$PWD/brain" "$PWD/lean-agent-tools" "$RUNNER_TEMP/fx"
+      - run: npx vitest run test/real-db.test.ts
+        env:
+          LEAN_FIXTURE_DIR: ${{ runner.temp }}/fx
