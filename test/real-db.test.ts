@@ -21,6 +21,7 @@ const WHERE: Record<string, Array<"brain" | "tests">> = {
   RUNNING_JOBS: ["tests"],
   QUEUED_JOBS: ["tests"],
   FINISHED_JOBS: ["tests"],
+  HAS_JOBS: ["brain"],
   HAS_ACTIVITIES: ["brain"],
   ACTIVITY: ["brain"],
   WAITING: ["brain"],
