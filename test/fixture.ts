@@ -70,15 +70,6 @@ export async function sqlJs() {
   return initSqlJs({ wasmBinary: wasm as unknown as ArrayBuffer });
 }
 
-/** schema 9 by default, with the activities table a `brain activity` command makes; 5 is from before platform and host and has no activities. */
-export async function emptyDb(version: 5 | 9 = 9): Promise<Database> {
-  const SQL = await sqlJs();
-  const db = new SQL.Database();
-  for (const s of version === 9 ? [...SCHEMA, ...LATER, ...ACTIVITY] : SCHEMA) db.run(s);
-  db.run(`INSERT INTO meta VALUES ('schema_version','${version}')`);
-  return db;
-}
-
 function item(db: Database, o: Record<string, string | number | null>) {
   const row = { repo: "", branch: "", title: "", body: "", status: "open", resolution: "", severity: "", cycle: "",
     occurrences: 1, closed_at: null, ...o } as Record<string, string | number | null>;
@@ -134,15 +125,6 @@ function seedActivity(db: Database) {
   act(60, "vm exec <b>x</b>", 0, "exit 1 <script>");
   act(DAY * 3, "deploy", 1);
   act(DAY * 5, "odd", 1, "", { project: "<p>", target: "<t>", host: "<i>h</i>" });
-}
-
-export async function seededDb(): Promise<Database> {
-  const db = await emptyDb();
-  seedRuns(db);
-  seedItems(db);
-  seedJobs(db);
-  seedActivity(db);
-  return db;
 }
 
 export const BRAIN_SCHEMA = 9;

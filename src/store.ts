@@ -1,14 +1,14 @@
 import * as fs from "node:fs";
 import initSqlJs, { Database, SqlJsStatic } from "sql.js";
 
-/** Loads the brain file into memory on each refresh. Reading bytes means the file is never opened for writing. */
+/** Loads one database file into memory on each refresh. Reading bytes means the file is never opened for writing. */
 export class Store {
   private sql?: SqlJsStatic;
   private db?: Database;
   lastGood = 0;
   note = "";
 
-  constructor(private readonly wasmPath: string) {}
+  constructor(private readonly wasmPath: string, private readonly label = "brain") {}
 
   async init(): Promise<void> {
     this.sql = await initSqlJs({ wasmBinary: fs.readFileSync(this.wasmPath) as unknown as ArrayBuffer });
@@ -21,7 +21,7 @@ export class Store {
   private tryLoad(file: string): Database {
     const bytes = fs.readFileSync(file);
     const db = new this.sql!.Database(new Uint8Array(bytes));
-    db.exec("SELECT value FROM meta WHERE key='schema_version'"); // fails if the file is mid-write or not a brain
+    db.exec("SELECT value FROM meta WHERE key='schema_version'"); // fails if the file is mid-write or not one of ours
     return db;
   }
 
@@ -29,7 +29,9 @@ export class Store {
   async refresh(file: string): Promise<boolean> {
     if (!this.sql) await this.init();
     if (!fs.existsSync(file)) {
-      this.note = `No brain database at ${file}.`;
+      this.db?.close();
+      this.db = undefined;
+      this.note = `No ${this.label} database at ${file}.`;
       return false;
     }
     let lastErr: unknown;
@@ -48,8 +50,8 @@ export class Store {
     }
     const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
     this.note = this.db
-      ? `The database could not be read (${msg}). Showing the last good data from ${new Date(this.lastGood).toLocaleTimeString("en-GB")}.`
-      : `The database could not be read (${msg}).`;
+      ? `The ${this.label} database could not be read (${msg}). Showing the last good data from ${new Date(this.lastGood).toLocaleTimeString("en-GB")}.`
+      : `The ${this.label} database could not be read (${msg}).`;
     return false;
   }
 }

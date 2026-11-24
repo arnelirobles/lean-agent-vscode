@@ -9,6 +9,10 @@ export function defaultDbPath(setting: string, env: NodeJS.ProcessEnv = process.
   return setting || env.LEAN_BRAIN_DB || path.join(home, ".local", "share", "lean", "brain.db");
 }
 
+export function defaultTestsDbPath(setting: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
+  return setting || env.LEAN_TESTS_DB || path.join(home, ".local", "share", "lean", "tests.db");
+}
+
 function isExecutable(p: string): boolean {
   try {
     fs.accessSync(p, fs.constants.X_OK);

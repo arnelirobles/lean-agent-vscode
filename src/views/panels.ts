@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import type { Database } from "sql.js";
 import * as db from "../db";
 import { dashboardHtml } from "../dashboard/dashboardHtml";
 import { itemHtml } from "../dashboard/itemHtml";
@@ -66,7 +65,7 @@ export class DashboardPanel {
   canMove = false;
   constructor(private readonly root: vscode.Uri, private readonly actions: Actions) {}
 
-  show(database: Database | undefined, note: string): void {
+  show(dbs: db.Dbs, note: string): void {
     if (!this.panel) {
       this.panel = vscode.window.createWebviewPanel("leanBrain.dashboard", "Lean Brain", vscode.ViewColumn.Active, options(this.root));
       this.panel.onDidDispose(() => {
@@ -77,17 +76,18 @@ export class DashboardPanel {
       // Running jobs' logs grow between database refreshes, so the live blocks get their own 3 second tick.
       this.timer = setInterval(() => this.postLive(), 3000);
     } else this.panel.reveal();
-    this.render(database, note);
+    this.render(dbs, note);
   }
 
-  render(database: Database | undefined, note: string): void {
+  render(dbs: db.Dbs, note: string): void {
     if (!this.panel) return;
     const nonce = makeNonce();
-    const data = database ? db.dashboard(database, Math.floor(Date.now() / 1000)) : emptyData();
+    const have = Boolean(dbs.brain || dbs.tests);
+    const data = have ? db.dashboard(dbs, Math.floor(Date.now() / 1000)) : emptyData();
     data.remotes = readRemotes(process.env, os.homedir());
     data.canMove = this.canMove;
     this.running = data.queue.running;
-    this.panel.webview.html = dashboardHtml(data, nonce, this.panel.webview.cspSource, database ? note : note || "No data.",
+    this.panel.webview.html = dashboardHtml(data, nonce, this.panel.webview.cspSource, have ? note : note || "No data.",
       codicons(this.panel, this.root), media(this.panel, this.root));
     this.postLive();
   }
@@ -104,20 +104,20 @@ export class ItemPanel {
   private current?: number;
   constructor(private readonly root: vscode.Uri, private readonly actions: Actions) {}
 
-  show(database: Database | undefined, id: number): void {
-    if (!database) return;
+  show(dbs: db.Dbs, id: number): void {
+    if (!dbs.brain) return;
     this.current = id;
     if (!this.panel) {
       this.panel = vscode.window.createWebviewPanel("leanBrain.item", `Item ${id}`, vscode.ViewColumn.Beside, options(this.root));
       this.panel.onDidDispose(() => (this.panel = undefined));
       wire(this.panel, this.actions);
     } else this.panel.reveal(undefined, true);
-    this.render(database);
+    this.render(dbs);
   }
 
-  render(database: Database | undefined): void {
-    if (!this.panel || !database || this.current === undefined) return;
-    const item = db.getItem(database, this.current);
+  render(dbs: db.Dbs): void {
+    if (!this.panel || !dbs.brain || this.current === undefined) return;
+    const item = db.getItem(dbs.brain, this.current);
     this.panel.title = `Item ${this.current}`;
     const nonce = makeNonce();
     this.panel.webview.html = item

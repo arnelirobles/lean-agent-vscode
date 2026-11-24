@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import type { Database } from "sql.js";
 import * as db from "../db";
 import { canSend } from "../claude";
 import { kindLook, toneColorId, type Look } from "../style";
@@ -11,6 +10,7 @@ export function themeIcon(look: Look): vscode.ThemeIcon {
 }
 
 type Node =
+  | { t: "message"; text: string }
   | { t: "project"; project: string; items: ItemRow[] }
   | { t: "kind"; project: string; kind: string; items: ItemRow[] }
   | { t: "item"; item: ItemRow };
@@ -20,13 +20,17 @@ export class ItemsTree implements vscode.TreeDataProvider<Node> {
   readonly onDidChangeTreeData = this.emitter.event;
   private items: ItemRow[] = [];
 
-  setData(database: Database | undefined): void {
-    this.items = database ? db.openItems(database) : [];
+  private message = "";
+
+  setData(dbs: db.Dbs): void {
+    this.items = dbs.brain ? db.openItems(dbs.brain) : [];
+    this.message = db.itemsMessage(dbs);
     this.emitter.fire();
   }
 
   getChildren(node?: Node): Node[] {
     if (!node) {
+      if (this.message) return [{ t: "message", text: this.message }];
       const by = new Map<string, ItemRow[]>();
       for (const i of this.items) by.set(i.project, [...(by.get(i.project) ?? []), i]);
       return [...by].map(([project, items]) => ({ t: "project", project, items }));
@@ -41,6 +45,7 @@ export class ItemsTree implements vscode.TreeDataProvider<Node> {
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
+    if (node.t === "message") return new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
     if (node.t === "project" || node.t === "kind") {
       const label = node.t === "project" ? node.project : node.kind;
       const ti = new vscode.TreeItem(`${label} (${node.items.length})`, node.t === "project"

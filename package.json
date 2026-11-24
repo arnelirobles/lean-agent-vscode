@@ -282,6 +282,12 @@
           "description": "Path to brain.db. Empty uses LEAN_BRAIN_DB, then ~/.local/share/lean/brain.db.",
           "scope": "machine"
         },
+        "leanBrain.testsDbPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to tests.db, which holds the test queue and runs. Empty uses LEAN_TESTS_DB, then ~/.local/share/lean/tests.db.",
+          "scope": "machine"
+        },
         "leanBrain.brainPath": {
           "type": "string",
           "default": "",
@@ -318,10 +324,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "brainPath and dbPath are read only from user settings, since a workspace could point them at another program.",
+      "description": "brainPath, dbPath and testsDbPath are read only from user settings, since a workspace could point them at another program.",
       "restrictedConfigurations": [
         "leanBrain.brainPath",
         "leanBrain.dbPath",
+        "leanBrain.testsDbPath",
         "leanBrain.claudeCommand"
       ]
     }

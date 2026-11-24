@@ -13,6 +13,12 @@ export const STALE_DAYS = 14;
 
 type Row = Record<string, any>;
 
+/** The two files. A field is undefined when its file is missing. */
+export interface Dbs { brain?: Database; tests?: Database }
+
+export const KNOWN_BRAIN_SCHEMA = 9;
+export const KNOWN_TESTS_SCHEMA = 1;
+
 export function rows(db: Database, sql: string, params: (string | number)[] = []): Row[] {
   const stmt = db.prepare(sql);
   try {
@@ -42,6 +48,24 @@ export function parseIso(ts: string | null | undefined): number | null {
 export function schemaVersion(db: Database): number | null {
   const r = one(db, Q.SCHEMA_VERSION);
   return r ? Number(r.value) : null;
+}
+
+export function itemsMessage(dbs: Dbs): string {
+  return dbs.brain ? "" : "Install brain to see items.";
+}
+
+export function queueMessage(dbs: Dbs): string {
+  return dbs.tests ? "" : "Install lean-agent-tools to see the test queue.";
+}
+
+/** Empty when both files are at a schema this extension knows. */
+export function schemaNote(dbs: Dbs): string {
+  const notes: string[] = [];
+  const brain = dbs.brain && schemaVersion(dbs.brain);
+  const tests = dbs.tests && schemaVersion(dbs.tests);
+  if (brain && brain > KNOWN_BRAIN_SCHEMA) notes.push("brain.db is newer than this extension knows. Update Lean Brain.");
+  if (tests && tests > KNOWN_TESTS_SCHEMA) notes.push("tests.db is newer than this extension knows. Update Lean Brain.");
+  return notes.join(" ");
 }
 
 export function openItems(db: Database): ItemRow[] {
@@ -79,12 +103,9 @@ export function openCounts(db: Database, projects?: string[]): { counts: Counts;
 }
 
 export function queue(db: Database): QueueData {
-  const version = schemaVersion(db) ?? 0;
-  const lane = version >= 7 ? Q.LANE_COLUMNS : Q.NO_LANE_COLUMNS;
-  const prio = version >= 6 ? Q.PRIO_COLUMN : Q.NO_PRIO_COLUMN;
-  const jobs = (sql: string) => rows(db, sql.replace("%LANE%", lane).replace("%PRIO%", prio))
+  const jobs = (sql: string) => rows(db, sql)
     .map((r) => ({ ...r, routable: Boolean(r.routable), priority: r.priority == null ? null : Number(r.priority) })) as JobRow[];
-  const today = rows(db, Q.LANE_TODAY.replace("%LANE%", lane))
+  const today = rows(db, Q.LANE_TODAY)
     .map((r) => ({ host: String(r.host ?? ""), status: String(r.status), n: Number(r.n) }));
   return { running: jobs(Q.RUNNING_JOBS), queued: jobs(Q.QUEUED_JOBS), finished: jobs(Q.FINISHED_JOBS), today };
 }
@@ -113,11 +134,11 @@ export function waiting(db: Database): ItemRow[] {
   return rows(db, sql, kinds) as ItemRow[];
 }
 
-export function headline(db: Database, now: number): Headline {
-  const counts = openCounts(db).counts;
+export function headline(dbs: Dbs, now: number): Headline {
+  const counts = dbs.brain ? openCounts(dbs.brain).counts : { real: 0, flaky: 0 };
   const since = now - 7 * 86400;
-  const closed = one(db, Q.CLOSED_SINCE, [isoAt(since)]);
-  const runs = one(db, Q.RUNS_SINCE, [since]);
+  const closed = dbs.brain && one(dbs.brain, Q.CLOSED_SINCE, [isoAt(since)]);
+  const runs = dbs.tests && one(dbs.tests, Q.RUNS_SINCE, [since]);
   return {
     realOpen: counts.real,
     flakyOpen: counts.flaky,
@@ -127,8 +148,11 @@ export function headline(db: Database, now: number): Headline {
   };
 }
 
-export function cycles(db: Database): CycleRow[] {
-  return rows(db, Q.CYCLES) as CycleRow[];
+export function cycles(dbs: Dbs): CycleRow[] {
+  if (!dbs.tests) return [];
+  const filed = new Map<string, number>();
+  if (dbs.brain) for (const r of rows(dbs.brain, Q.FLAKY_BY_CYCLE)) filed.set(String(r.cycle), Number(r.n));
+  return rows(dbs.tests, Q.CYCLES).map((r) => ({ ...r, flaky_filed: filed.get(String(r.cycle)) ?? 0 })) as CycleRow[];
 }
 
 export function median(xs: number[]): number {
@@ -138,9 +162,9 @@ export function median(xs: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-export function suites(db: Database): SuiteRow[] {
+export function suites(dbs: Dbs): SuiteRow[] {
   const by = new Map<string, Row[]>();
-  for (const r of rows(db, Q.SUITE_RUNS)) {
+  for (const r of dbs.tests ? rows(dbs.tests, Q.SUITE_RUNS) : []) {
     const key = `${r.project}\u0000${r.test_project}`;
     const list = by.get(key) ?? [];
     list.push(r);
@@ -190,18 +214,19 @@ export function activity(db: Database): ActivityRow[] {
   })) as ActivityRow[];
 }
 
-export function dashboard(db: Database, now: number): DashboardData {
+export function dashboard(dbs: Dbs, now: number): DashboardData {
+  const { brain, tests } = dbs;
   return {
-    schemaVersion: schemaVersion(db),
-    waiting: waiting(db),
-    headline: headline(db, now),
-    cycles: cycles(db),
-    suites: suites(db),
-    flakiest: flakiest(db),
-    load: loadPoints(db),
-    stale: stale(db, now),
-    queue: queue(db),
-    activity: activity(db),
+    schemaVersion: brain ? schemaVersion(brain) : null,
+    waiting: brain ? waiting(brain) : [],
+    headline: headline(dbs, now),
+    cycles: cycles(dbs),
+    suites: suites(dbs),
+    flakiest: brain ? flakiest(brain) : [],
+    load: tests ? loadPoints(tests) : [],
+    stale: brain ? stale(brain, now) : [],
+    queue: tests ? queue(tests) : { running: [], queued: [], finished: [], today: [] },
+    activity: brain ? activity(brain) : [],
     generatedAt: now,
   };
 }

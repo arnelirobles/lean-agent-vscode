@@ -5,11 +5,11 @@ import * as db from "../src/db";
 import { esc } from "../src/dashboard/escape";
 import { dashboardBody, dashboardHtml, listCommand } from "../src/dashboard/dashboardHtml";
 import { itemHtml } from "../src/dashboard/itemHtml";
-import { emptyDb, NOW, seededDb } from "./fixture";
+import { brainDb, NOW, seededDbs, testsDb } from "./fixture";
 import type { DashboardData } from "../src/types";
 
 let data: DashboardData;
-beforeAll(async () => { data = db.dashboard(await seededDb(), NOW); });
+beforeAll(async () => { data = db.dashboard(await seededDbs(), NOW); });
 
 describe("escape", () => {
   it("escapes the five characters", () => {
@@ -95,7 +95,7 @@ describe("dashboard html", () => {
   });
 
   it("renders every section on an empty database", async () => {
-    const empty = db.dashboard(await emptyDb(), NOW);
+    const empty = db.dashboard({ brain: await brainDb(), tests: await testsDb() }, NOW);
     const body = dashboardBody(empty, "a note");
     expect(body).toContain("Nothing is waiting on you.");
     expect(body).toContain("No runs recorded yet.");
@@ -109,7 +109,7 @@ describe("dashboard html", () => {
 
 describe("item html", () => {
   it("escapes title and body and shows tags", async () => {
-    const d = await seededDb();
+    const d = (await seededDbs()).brain!;
     const q = db.getItem(d, 2)!;
     expect(q.title).toContain("<script>");
     const html = itemHtml(q, NOW, "N", "vscode-resource:");
@@ -121,7 +121,7 @@ describe("item html", () => {
   });
 
   it("gives an open question an answer box that goes back to the session that asked", async () => {
-    const d = await seededDb();
+    const d = (await seededDbs()).brain!;
     const html = itemHtml(db.getItem(d, 2)!, NOW, "N", "vscode-resource:");
     expect(html).toContain(`<textarea id="answer"`);
     expect(html).toContain(`data-answer="2"`);

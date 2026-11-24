@@ -1,4 +1,4 @@
-// All SQL in one place. Times: items and jobs use ISO strings (2026-01-02T03:04:05Z), runs use epoch seconds.
+// All SQL in one place. Items, tags, sessions and activities are in brain.db; runs and jobs are in tests.db. Times: items and jobs use ISO strings (2026-01-02T03:04:05Z), runs use epoch seconds.
 
 export const SCHEMA_VERSION = `SELECT value FROM meta WHERE key='schema_version'`;
 
@@ -10,26 +10,19 @@ export const ITEM = `SELECT * FROM items WHERE id=?`;
 export const SESSION = `SELECT ended_at FROM sessions WHERE id=?`;
 export const ITEM_TAGS = `SELECT tag FROM tags WHERE item_id=? ORDER BY tag`;
 
-// %LANE% is ", platform, host" on schema 7 and later, and a constant pair before it.
-export const LANE_COLUMNS = ", platform, host, 1 AS routable";
-export const NO_LANE_COLUMNS = ", '' AS platform, '' AS host, 0 AS routable";
-// %PRIO% is ", priority" on schema 6 and later, when bump and move came in, and NULL before it.
-export const PRIO_COLUMN = ", priority";
-export const NO_PRIO_COLUMN = ", NULL AS priority";
-
 export const LANE_TODAY = `
-  SELECT host, status, COUNT(*) AS n FROM (SELECT status, ended_at%LANE% FROM jobs)
+  SELECT host, status, COUNT(*) AS n FROM (SELECT status, ended_at, host FROM jobs)
   WHERE status IN ('done','failed') AND ended_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 day')
   GROUP BY host, status`;
 
 export const RUNNING_JOBS = `
-  SELECT id, cycle, project, test_project, status, tier, enqueued_at, started_at, ended_at, reason%LANE%%PRIO%
+  SELECT id, cycle, project, test_project, status, tier, enqueued_at, started_at, ended_at, reason, platform, host, 1 AS routable, priority
   FROM jobs WHERE status='running' ORDER BY id`;
 export const QUEUED_JOBS = `
-  SELECT id, cycle, project, test_project, status, tier, enqueued_at, started_at, ended_at, reason%LANE%%PRIO%
+  SELECT id, cycle, project, test_project, status, tier, enqueued_at, started_at, ended_at, reason, platform, host, 1 AS routable, priority
   FROM jobs WHERE status='queued' ORDER BY priority DESC, id`;
 export const FINISHED_JOBS = `
-  SELECT id, cycle, project, test_project, status, tier, enqueued_at, started_at, ended_at, reason%LANE%%PRIO%
+  SELECT id, cycle, project, test_project, status, tier, enqueued_at, started_at, ended_at, reason, platform, host, 1 AS routable, priority
   FROM jobs WHERE status IN ('done','failed','cancelled') ORDER BY COALESCE(ended_at, enqueued_at) DESC, id DESC LIMIT 10`;
 
 export const HAS_ACTIVITIES = `SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='activities'`;
@@ -51,11 +44,12 @@ export const CLOSED_SINCE = `SELECT COUNT(*) AS n FROM items WHERE status IN ('c
 export const RUNS_SINCE = `SELECT COUNT(*) AS n, COALESCE(SUM(duration_s),0) AS total_s FROM runs WHERE started >= ?`;
 
 export const CYCLES = `
-  SELECT r.cycle AS cycle, COUNT(*) AS jobs, COALESCE(SUM(r.passed),0) AS passed, COALESCE(SUM(r.failed),0) AS failed,
-         COALESCE(SUM(r.duration_s),0) AS duration_s, COALESCE(SUM(r.stalled),0) AS stalls,
-         COALESCE(MAX(r.started),0) AS last_started,
-         (SELECT COUNT(*) FROM items i WHERE i.kind='flaky' AND i.cycle = r.cycle) AS flaky_filed
-  FROM runs r GROUP BY r.cycle ORDER BY last_started DESC LIMIT 12`;
+  SELECT cycle, COUNT(*) AS jobs, COALESCE(SUM(passed),0) AS passed, COALESCE(SUM(failed),0) AS failed,
+         COALESCE(SUM(duration_s),0) AS duration_s, COALESCE(SUM(stalled),0) AS stalls,
+         COALESCE(MAX(started),0) AS last_started
+  FROM runs GROUP BY cycle ORDER BY last_started DESC LIMIT 12`;
+
+export const FLAKY_BY_CYCLE = `SELECT cycle, COUNT(*) AS n FROM items WHERE kind='flaky' GROUP BY cycle`;
 
 export const SUITE_RUNS = `
   SELECT project, test_project, duration_s, lane_wait_s, started, id FROM runs

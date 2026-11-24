@@ -1,24 +1,27 @@
 import * as vscode from "vscode";
-import type { Database } from "sql.js";
 import * as db from "../db";
 import { jobLook } from "../style";
 import type { JobRow, QueueData } from "../types";
 import { themeIcon } from "./itemsTree";
 
-type Node = { t: "group"; label: string; jobs: JobRow[] } | { t: "job"; job: JobRow };
+type Node = { t: "message"; text: string } | { t: "group"; label: string; jobs: JobRow[] } | { t: "job"; job: JobRow };
 
 export class QueueTree implements vscode.TreeDataProvider<Node> {
   private emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private q: QueueData = { running: [], queued: [], finished: [], today: [] };
 
-  setData(database: Database | undefined): void {
-    this.q = database ? db.queue(database) : { running: [], queued: [], finished: [], today: [] };
+  private message = "";
+
+  setData(dbs: db.Dbs): void {
+    this.q = dbs.tests ? db.queue(dbs.tests) : { running: [], queued: [], finished: [], today: [] };
+    this.message = db.queueMessage(dbs);
     this.emitter.fire();
   }
 
   getChildren(node?: Node): Node[] {
     if (!node) {
+      if (this.message) return [{ t: "message", text: this.message }];
       const groups: Node[] = [
         { t: "group", label: "Running", jobs: this.q.running },
         { t: "group", label: "Queued", jobs: this.q.queued },
@@ -30,6 +33,7 @@ export class QueueTree implements vscode.TreeDataProvider<Node> {
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
+    if (node.t === "message") return new vscode.TreeItem(node.text, vscode.TreeItemCollapsibleState.None);
     if (node.t === "group") {
       const g = new vscode.TreeItem(`${node.label} (${node.jobs.length})`,
         node.jobs.length ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);

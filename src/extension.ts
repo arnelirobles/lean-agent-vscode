@@ -18,7 +18,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // Only the user-level value counts, so a workspace cannot point these at another program.
   const userSetting = (key: string) => cfg().inspect<string>(key)?.globalValue ?? "";
   const dbPath = () => cli.defaultDbPath(userSetting("dbPath"));
-  const store = new Store(path.join(ctx.extensionPath, "out", "sql-wasm.wasm"));
+  const testsDbPath = () => cli.defaultTestsDbPath(userSetting("testsDbPath"));
+  const wasm = path.join(ctx.extensionPath, "out", "sql-wasm.wasm");
+  const brainStore = new Store(wasm, "brain.db");
+  const testsStore = new Store(wasm, "tests.db");
+  const dbs = (): db.Dbs => ({ brain: brainStore.database, tests: testsStore.database });
+  const notes = (): string => [brainStore.note, testsStore.note, db.schemaNote(dbs())].filter(Boolean).join(" ");
   const items = new ItemsTree();
   const queueTree = new QueueTree();
   const status = new StatusBar();
@@ -35,27 +40,27 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     return moveCheck.can;
   };
   const refresh = async (): Promise<void> => {
-    await store.refresh(dbPath());
+    await Promise.all([brainStore.refresh(dbPath()), testsStore.refresh(testsDbPath())]);
     dashboard.canMove = await canMove();
     void vscode.commands.executeCommand("setContext", "leanBrain.canMove", dashboard.canMove);
-    const d = store.database;
-    status.update(d, projects, store.note);
+    const d = dbs();
+    status.update(d, projects, notes());
     items.setData(d);
     queueTree.setData(d);
-    dashboard.render(d, store.note);
+    dashboard.render(d, notes());
     itemPanel.render(d);
   };
   const claude = new ClaudeTerminal(() => userSetting("claudeCommand"), () => folder);
   const ask = (id: number) => {
-    const it = store.database && db.getItem(store.database, id);
+    const it = brainStore.database && db.getItem(brainStore.database, id);
     if (it) claude.ask(it);
   };
   const send = (id: number) => {
-    const it = store.database && db.getItem(store.database, id);
+    const it = brainStore.database && db.getItem(brainStore.database, id);
     if (it && canSend(it.kind)) claude.send(it);
   };
   const answer = async (id: number, text: string): Promise<void> => {
-    const d = store.database;
+    const d = brainStore.database;
     const it = d && db.getItem(d, id);
     if (!d || !it || it.status !== "open") return;
     const sid = it.session_id ?? "";
@@ -94,7 +99,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     await refresh();
   };
   const actions: Actions = {
-    openItem: (id) => itemPanel.show(store.database, id), refresh: () => void refresh(), claude: () => claude.open(), ask, send,
+    openItem: (id) => itemPanel.show(dbs(), id), refresh: () => void refresh(), claude: () => claude.open(), ask, send,
     answer: (id, text) => void answer(id, text), route: (id, to) => void routeJob(id, to),
     move: (id, where) => void moveJob(id, where),
   };
@@ -112,7 +117,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.window.registerTreeDataProvider("leanBrain.queue", queueTree),
     vscode.commands.registerCommand("leanBrain.openDashboard", async () => {
       await refresh();
-      dashboard.show(store.database, store.note);
+      dashboard.show(dbs(), notes());
     }),
     vscode.commands.registerCommand("leanBrain.refresh", () => refresh()),
     vscode.commands.registerCommand("leanBrain.openClaude", () => claude.open()),
@@ -124,7 +129,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       const it = itemFromArg(arg);
       if (it) ask(it.id);
     }),
-    vscode.commands.registerCommand("leanBrain.showItem", (id: number) => itemPanel.show(store.database, id)),
+    vscode.commands.registerCommand("leanBrain.showItem", (id: number) => itemPanel.show(dbs(), id)),
     vscode.commands.registerCommand("leanBrain.copyRef", async (arg) => {
       const it = itemFromArg(arg);
       if (it) await vscode.env.clipboard.writeText(it.ref);
@@ -212,29 +217,34 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     await refresh();
   }
 
-  // Watch brain.db and its -wal, debounced to 2 s.
+  // Watch brain.db, tests.db and their -wal files, debounced to 2 s.
   let watchers: fs.FSWatcher[] = [];
   let debounce: NodeJS.Timeout | undefined;
   function watch(): void {
     for (const w of watchers) w.close();
     watchers = [];
-    const file = dbPath();
-    const dir = path.dirname(file);
-    const names = new Set([path.basename(file), path.basename(file) + "-wal"]);
-    try {
-      watchers.push(fs.watch(dir, (_ev, name) => {
-        if (!name || !names.has(String(name))) return;
-        if (debounce) clearTimeout(debounce);
-        debounce = setTimeout(() => void refresh(), 2000);
-      }));
-    } catch {
-      // The folder may not exist yet. The manual refresh still works.
+    const byDir = new Map<string, Set<string>>();
+    for (const file of [dbPath(), testsDbPath()]) {
+      const names = byDir.get(path.dirname(file)) ?? new Set<string>();
+      names.add(path.basename(file)).add(path.basename(file) + "-wal");
+      byDir.set(path.dirname(file), names);
+    }
+    for (const [dir, names] of byDir) {
+      try {
+        watchers.push(fs.watch(dir, (_ev, name) => {
+          if (!name || !names.has(String(name))) return;
+          if (debounce) clearTimeout(debounce);
+          debounce = setTimeout(() => void refresh(), 2000);
+        }));
+      } catch {
+        // The folder may not exist yet. The manual refresh still works.
+      }
     }
   }
   ctx.subscriptions.push({ dispose: () => { for (const w of watchers) w.close(); if (debounce) clearTimeout(debounce); } });
 
   void noticeOnce(ctx.globalState, String(ctx.extension.packageJSON.version), pageHost);
-  await store.init();
+  await Promise.all([brainStore.init(), testsStore.init()]);
   watch();
   await refresh();
 }
