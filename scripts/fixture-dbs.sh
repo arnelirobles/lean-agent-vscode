@@ -27,8 +27,8 @@ export LEAN_TESTS_DB="$out_dir/tests.db"
 brain="$brain_dir/tools/brain"
 test_phase="$tools_dir/tools/test-phase"
 
-"$brain" add --project demo --kind test-fail --ref Demo.Tests.Fails --cycle c1 --title "demo failing test" --severity high
-"$brain" add --project demo --kind flaky --ref Demo.Tests.Flaky --cycle c1 --title "demo flaky test" --severity low
+"$brain" add --project demo --kind test-fail --ref Demo.Tests.Fails --cycle c1 --title "demo failing test" --severity important
+"$brain" add --project demo --kind flaky --ref Demo.Tests.Flaky --cycle c1 --title "demo flaky test" --severity minor
 "$brain" activity add --source ci --action fixture --project demo
 
 "$test_phase" queue add --cycle c1 --project demo --tier full "$out_dir/repo" Demo.Tests

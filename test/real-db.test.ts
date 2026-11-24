@@ -11,29 +11,29 @@ const dir = process.env.LEAN_FIXTURE_DIR;
 const wasm = path.join(__dirname, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm");
 
 // Which database each query runs on, taken from how src/db.ts uses it.
-const WHERE: Record<string, "brain" | "tests"> = {
-  SCHEMA_VERSION: "brain",
-  OPEN_ITEMS: "brain",
-  ITEM: "brain",
-  SESSION: "brain",
-  ITEM_TAGS: "brain",
-  LANE_TODAY: "tests",
-  RUNNING_JOBS: "tests",
-  QUEUED_JOBS: "tests",
-  FINISHED_JOBS: "tests",
-  HAS_ACTIVITIES: "brain",
-  ACTIVITY: "brain",
-  WAITING: "brain",
-  OPEN_KINDS: "brain",
-  OPEN_COUNT_BY_KIND_PROJECT: "brain",
-  CLOSED_SINCE: "brain",
-  RUNS_SINCE: "tests",
-  CYCLES: "tests",
-  FLAKY_BY_CYCLE: "brain",
-  SUITE_RUNS: "tests",
-  FLAKIEST: "brain",
-  LOAD: "tests",
-  STALE: "brain",
+const WHERE: Record<string, Array<"brain" | "tests">> = {
+  SCHEMA_VERSION: ["brain", "tests"],
+  OPEN_ITEMS: ["brain"],
+  ITEM: ["brain"],
+  SESSION: ["brain"],
+  ITEM_TAGS: ["brain"],
+  LANE_TODAY: ["tests"],
+  RUNNING_JOBS: ["tests"],
+  QUEUED_JOBS: ["tests"],
+  FINISHED_JOBS: ["tests"],
+  HAS_ACTIVITIES: ["brain"],
+  ACTIVITY: ["brain"],
+  WAITING: ["brain"],
+  OPEN_KINDS: ["brain"],
+  OPEN_COUNT_BY_KIND_PROJECT: ["brain"],
+  CLOSED_SINCE: ["brain"],
+  RUNS_SINCE: ["tests"],
+  CYCLES: ["tests"],
+  FLAKY_BY_CYCLE: ["brain"],
+  SUITE_RUNS: ["tests"],
+  FLAKIEST: ["brain"],
+  LOAD: ["tests"],
+  STALE: ["brain"],
 };
 
 function columns(db: Database, table: string): string[] {
@@ -52,8 +52,12 @@ describe.skipIf(!dir)("extension against real brain and test-phase databases", (
   beforeAll(async () => {
     const brain = new Store(wasm, "brain.db");
     const tests = new Store(wasm, "tests.db");
-    expect(await brain.refresh(path.join(dir!, "brain.db"))).toBe(true);
-    expect(await tests.refresh(path.join(dir!, "tests.db"))).toBe(true);
+    for (const [store, file] of [[brain, "brain.db"], [tests, "tests.db"]] as const) {
+      if (!fs.existsSync(path.join(dir!, file))) {
+        throw new Error(`${file} not found in ${dir}; run scripts/fixture-dbs.sh first`);
+      }
+      expect(await store.refresh(path.join(dir!, file))).toBe(true);
+    }
     real.brain = brain.database;
     real.tests = tests.database;
   });
@@ -64,17 +68,19 @@ describe.skipIf(!dir)("extension against real brain and test-phase databases", (
   });
 
   for (const name of Object.keys(WHERE)) {
-    it(`${name} prepares and steps on ${WHERE[name]}.db`, () => {
-      const db = real[WHERE[name]]!;
-      let sql = (Q as Record<string, unknown>)[name] as string;
-      if (name === "WAITING") sql = sql.replace("%KINDS%", "?");
-      const stmt = db.prepare(sql);
-      try {
-        stmt.step();
-      } finally {
-        stmt.free();
-      }
-    });
+    for (const which of WHERE[name]) {
+      it(`${name} prepares and steps on ${which}.db`, () => {
+        const db = real[which]!;
+        let sql = (Q as Record<string, unknown>)[name] as string;
+        if (name === "WAITING") sql = sql.replace("%KINDS%", "?");
+        const stmt = db.prepare(sql);
+        try {
+          stmt.step();
+        } finally {
+          stmt.free();
+        }
+      });
+    }
   }
 
   for (const [label, make, which] of [
