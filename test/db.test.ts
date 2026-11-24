@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "sql.js";
 import * as db from "../src/db";
-import { emptyDb, iso, NOW, seededDb } from "./fixture";
+import { defaultTestsDbPath } from "../src/brainCli";
+import { BRAIN_SCHEMA, brainDb, emptyDb, iso, NOW, seededDb, seededDbs, TESTS_SCHEMA, testsDb } from "./fixture";
 
 let d: Database;
 beforeAll(async () => { d = await seededDb(); });
@@ -184,5 +185,79 @@ describe("dashboard queue", () => {
   it("carries the queue", async () => {
     const e = await seededDb();
     expect(db.dashboard(e, NOW).queue).toEqual(db.queue(e));
+  });
+});
+
+describe("tests.db path", () => {
+  it("is the setting, then LEAN_TESTS_DB, then the default", () => {
+    expect(defaultTestsDbPath("/a.db", { LEAN_TESTS_DB: "/b.db" }, "/h")).toBe("/a.db");
+    expect(defaultTestsDbPath("", { LEAN_TESTS_DB: "/b.db" }, "/h")).toBe("/b.db");
+    expect(defaultTestsDbPath("", {}, "/h")).toBe("/h/.local/share/lean/tests.db");
+  });
+});
+
+describe("reading brain.db and tests.db", () => {
+  it("seeds a brain at BRAIN_SCHEMA and a tests db at TESTS_SCHEMA", async () => {
+    const { brain, tests } = await seededDbs();
+    expect(db.schemaVersion(brain!)).toBe(BRAIN_SCHEMA);
+    expect(db.schemaVersion(tests!)).toBe(TESTS_SCHEMA);
+    expect(db.openItems(brain!).length).toBeGreaterThan(5);
+    expect(db.queue(tests!).running).toHaveLength(1);
+    expect(db.queue(tests!).queued[0]).toMatchObject({ routable: true, priority: 0, platform: "" });
+  });
+
+  it("counts flaky items filed in brain against the runs in tests", async () => {
+    const dbs = await seededDbs();
+    dbs.brain!.run(`INSERT INTO items (project, kind, ref, title, cycle, first_seen, last_seen) VALUES ('core','flaky','F.Second','F.Second','c1',?,?)`, [iso(60), iso(60)]);
+    const c = db.cycles(dbs);
+    expect(c.find((x) => x.cycle === "c1")).toMatchObject({ jobs: 2, passed: 98, failed: 2, flaky_filed: 2 });
+    expect(c.find((x) => x.cycle === "c2")).toMatchObject({ jobs: 2, stalls: 1, flaky_filed: 1 });
+  });
+
+  it("with no brain, cycles still lists the runs with no flaky filed, and the items view says to install brain", async () => {
+    const { tests } = await seededDbs();
+    const dbs = { tests };
+    expect(db.cycles(dbs).map((c) => c.flaky_filed)).toEqual([0, 0]);
+    expect(db.suites(dbs).length).toBe(2);
+    expect(db.itemsMessage(dbs)).toBe("Install brain to see items.");
+    expect(db.queueMessage(dbs)).toBe("");
+    const data = db.dashboard(dbs, NOW);
+    expect(data.waiting).toEqual([]);
+    expect(data.headline).toMatchObject({ realOpen: 0, flakyOpen: 0, closed7d: 0, runs7d: 3 });
+  });
+
+  it("with no tests db, the queue view says to install lean-agent-tools and the items still list", async () => {
+    const { brain } = await seededDbs();
+    const dbs = { brain };
+    expect(db.queueMessage(dbs)).toBe("Install lean-agent-tools to see the test queue.");
+    expect(db.itemsMessage(dbs)).toBe("");
+    expect(db.openItems(brain!).length).toBeGreaterThan(5);
+    expect(db.cycles(dbs)).toEqual([]);
+    const data = db.dashboard(dbs, NOW);
+    expect(data.queue).toEqual({ running: [], queued: [], finished: [], today: [] });
+    expect(data.headline).toMatchObject({ realOpen: 3, closed7d: 1, runs7d: 0 });
+  });
+
+  it("with neither file the dashboard is empty and both views say what to install", () => {
+    expect(db.itemsMessage({})).toBe("Install brain to see items.");
+    expect(db.queueMessage({})).toBe("Install lean-agent-tools to see the test queue.");
+    expect(db.dashboard({}, NOW).cycles).toEqual([]);
+  });
+
+  it("says nothing about the schema when both files are known", async () => {
+    expect(db.KNOWN_BRAIN_SCHEMA).toBe(9);
+    expect(db.KNOWN_TESTS_SCHEMA).toBe(1);
+    expect(db.schemaNote(await seededDbs())).toBe("");
+    expect(db.schemaNote({})).toBe("");
+  });
+
+  it("says when tests.db is newer than the extension knows", async () => {
+    const dbs = { brain: await brainDb(), tests: await testsDb(2) };
+    expect(db.schemaNote(dbs)).toBe("tests.db is newer than this extension knows. Update Lean Brain.");
+  });
+
+  it("says when brain.db is newer than the extension knows", async () => {
+    const dbs = { brain: await brainDb(10), tests: await testsDb() };
+    expect(db.schemaNote(dbs)).toBe("brain.db is newer than this extension knows. Update Lean Brain.");
   });
 });

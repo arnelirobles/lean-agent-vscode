@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import initSqlJs, { Database } from "sql.js";
+import type { Dbs } from "../src/db";
 
 // Copied from tools/brain (migrate_2 to migrate_5, and the meta table; LATER has migrate_6 to migrate_9). schema.test.ts keeps it honest.
 export const SCHEMA = [
@@ -85,8 +86,7 @@ function item(db: Database, o: Record<string, string | number | null>) {
   db.run(`INSERT INTO items (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`, Object.values(row));
 }
 
-export async function seededDb(): Promise<Database> {
-  const db = await emptyDb();
+function seedRuns(db: Database) {
   // runs: suite A has 3 runs, suite B has 1 stalled run
   const run = (cycle: string, tp: string, started: number, dur: number, wait: number, ls: number, le: number, passed: number, failed: number, stalled = 0) =>
     db.run(`INSERT INTO runs (cycle, project, test_project, tier, started, ended, duration_s, lane_wait_s, load_start, load_end, passed, failed, stalled, exit_code)
@@ -96,7 +96,9 @@ export async function seededDb(): Promise<Database> {
   run("c1", "tests/A.Tests/A.Tests.csproj", NOW - 2 * DAY + 500, 300, 10, 2.0, 3.5, 48, 2);
   run("c2", "tests/A.Tests/A.Tests.csproj", NOW - 1 * DAY, 200, 0, 1.0, 1.2, 50, 0);
   run("c2", "tests/B.Tests/B.Tests.csproj", NOW - 10 * DAY, 600, 30, 6.0, 9.0, 10, 0, 1);
+}
 
+function seedItems(db: Database) {
   item(db, { project: "core", kind: "blocker", ref: "need-key", title: "waiting on the signing key", first_seen: iso(3600), last_seen: iso(3600) });
   item(db, { project: "core", kind: "question", ref: "q1", title: "which tier for <script>alert(1)</script>?", first_seen: iso(7200), last_seen: iso(7200), body: "body <b>bold</b> & more" });
   item(db, { project: "core", kind: "pending", ref: "p1", title: "next step", first_seen: iso(100), last_seen: iso(100) });
@@ -112,14 +114,18 @@ export async function seededDb(): Promise<Database> {
   db.run(`UPDATE items SET session_id='0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b', session_cwd='/work/core' WHERE id=2`);
   db.run(`INSERT INTO sessions VALUES ('0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b','/work/core',?,'')`, [iso(7200)]);
   db.run(`INSERT INTO sessions VALUES ('ended-1','/work/x',?,?)`, [iso(9000), iso(8000)]);
+}
 
+function seedJobs(db: Database) {
   const job = (status: string, tp: string, enq: number, start: number | null, end: number | null) =>
     db.run(`INSERT INTO jobs (cycle, project, repo_dir, test_project, status, enqueued_at, started_at, ended_at) VALUES ('c2','core','/r',?,?,?,?,?)`,
       [tp, status, iso(enq), start == null ? null : iso(start), end == null ? null : iso(end)]);
   job("done", "tests/A.Tests/A.Tests.csproj", 900, 800, 700);
   job("running", "tests/B.Tests/B.Tests.csproj", 400, 300, null);
   job("queued", "tests/C.Tests/C.Tests.csproj", 100, null, null);
+}
 
+function seedActivity(db: Database) {
   const act = (ago: number, action: string, ok: number, error = "", extra: Record<string, string | number> = {}) =>
     db.run(`INSERT INTO activities (source, ts, action, project, target, ok, duration_ms, error, host, raw, imported_at)
             VALUES ('baryovm',?,?,?,?,?,?,?,?,'{}',?)`,
@@ -128,5 +134,68 @@ export async function seededDb(): Promise<Database> {
   act(60, "vm exec <b>x</b>", 0, "exit 1 <script>");
   act(DAY * 3, "deploy", 1);
   act(DAY * 5, "odd", 1, "", { project: "<p>", target: "<t>", host: "<i>h</i>" });
+}
+
+export async function seededDb(): Promise<Database> {
+  const db = await emptyDb();
+  seedRuns(db);
+  seedItems(db);
+  seedJobs(db);
+  seedActivity(db);
   return db;
+}
+
+export const BRAIN_SCHEMA = 9;
+export const TESTS_SCHEMA = 1;
+
+// Copied from lib/testq/store.py (RUNS_DDL, JOBS_DDL) in lean-agent-tools.
+const TESTS_DDL = [
+  `CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, cycle TEXT NOT NULL DEFAULT '', project TEXT NOT NULL,
+    repo TEXT NOT NULL DEFAULT '', test_project TEXT NOT NULL DEFAULT '', runner TEXT NOT NULL DEFAULT '',
+    tier TEXT NOT NULL DEFAULT 'full', started INTEGER, ended INTEGER, duration_s REAL,
+    lane_wait_s REAL, load_start REAL, load_end REAL, passed INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0,
+    stalled INTEGER NOT NULL DEFAULT 0, exit_code INTEGER, host TEXT NOT NULL DEFAULT '')`,
+  `CREATE TABLE jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, cycle TEXT NOT NULL DEFAULT '', project TEXT NOT NULL,
+    repo_dir TEXT NOT NULL, test_project TEXT NOT NULL, filter TEXT NOT NULL DEFAULT '',
+    tier TEXT NOT NULL DEFAULT 'full', after_id INTEGER REFERENCES jobs(id),
+    status TEXT NOT NULL DEFAULT 'queued', reason TEXT NOT NULL DEFAULT '',
+    enqueued_by TEXT NOT NULL DEFAULT '', enqueued_at TEXT NOT NULL, started_at TEXT, ended_at TEXT,
+    run_id INTEGER REFERENCES runs(id), args TEXT NOT NULL DEFAULT '',
+    priority INTEGER NOT NULL DEFAULT 0, platform TEXT NOT NULL DEFAULT '', host TEXT NOT NULL DEFAULT '',
+    commit_hash TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
+    session_cwd TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '')`,
+  `CREATE INDEX jobs_status ON jobs (status, id)`,
+];
+
+/** brain.db after the split: items, tags and sessions, plus the activities table. No runs or jobs. */
+export async function brainDb(version: number = BRAIN_SCHEMA): Promise<Database> {
+  const SQL = await sqlJs();
+  const db = new SQL.Database();
+  const queueSide = /^(CREATE (TABLE|INDEX) (runs|jobs|runs_test|jobs_status)\b|ALTER TABLE jobs\b)/;
+  for (const s of [...SCHEMA, ...ACTIVITY]) if (!queueSide.test(s)) db.run(s);
+  db.run(`INSERT INTO meta VALUES ('schema_version','${version}')`);
+  return db;
+}
+
+export async function testsDb(version: number = TESTS_SCHEMA): Promise<Database> {
+  const SQL = await sqlJs();
+  const db = new SQL.Database();
+  for (const s of TESTS_DDL) db.run(s);
+  db.run(`INSERT INTO meta VALUES ('schema_version','${version}')`);
+  return db;
+}
+
+/** A brain.db at BRAIN_SCHEMA and a tests.db at TESTS_SCHEMA, seeded like seededDb. */
+export async function seededDbs(): Promise<Dbs> {
+  const brain = await brainDb();
+  const tests = await testsDb();
+  seedItems(brain);
+  seedActivity(brain);
+  seedRuns(tests);
+  seedJobs(tests);
+  return { brain, tests };
 }
