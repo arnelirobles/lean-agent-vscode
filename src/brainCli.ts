@@ -67,7 +67,7 @@ function newestInCache(home: string, plugin: string, tool: string): string | und
 function findTool(name: string, plugin: string, setting: string, env: NodeJS.ProcessEnv, home: string): string | undefined {
   if (setting) return isExecutable(setting) ? setting : undefined;
   for (const dir of (env.PATH ?? "").split(path.delimiter)) {
-    if (!dir) continue;
+    if (!dir || !path.isAbsolute(dir)) continue;
     const p = path.join(dir, name);
     if (isExecutable(p)) return p;
   }
@@ -93,9 +93,10 @@ export function runBrain(brain: string, args: string[], dbPath: string, cwd?: st
   });
 }
 
-export function runTestPhase(tp: string, args: string[], testsDbPath: string, cwd?: string): Promise<CliResult> {
+export function runTestPhase(tp: string, args: string[], testsDbPath: string, cwd?: string, brainDbPath?: string): Promise<CliResult> {
+  const env = { ...process.env, LEAN_TESTS_DB: testsDbPath, ...(brainDbPath ? { LEAN_BRAIN_DB: brainDbPath } : {}) };
   return new Promise((resolve) => {
-    execFile(tp, args, { env: { ...process.env, LEAN_TESTS_DB: testsDbPath }, cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
+    execFile(tp, args, { env, cwd, timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) => resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr || err?.message || "") }));
   });
 }
@@ -108,7 +109,7 @@ export function closeArgs(id: number, resolution: "fixed" | "not-a-bug"): string
 
 /** Close a question with the answer as the note. delivered: the answer already reached the session that asked. */
 export function answerArgs(id: number, answer: string, delivered: boolean): string[] {
-  return ["close", String(id), "--resolution", "answered", "--note", answer, ...(delivered ? ["--delivered"] : [])];
+  return ["close", String(id), "--resolution", "answered", `--note=${answer}`, ...(delivered ? ["--delivered"] : [])];
 }
 
 export function reopenArgs(id: number): string[] {

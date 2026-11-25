@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { REQUIRED, checkPlugins, missingPlugins, setupCommands, type SetupHost } from "../src/setup";
 
+const CLAUDE = "/fake/bin/claude";
+const q = "'/fake/bin/claude'";
+
 const entry = (id: string, enabled = true, scope = "user") => ({
   id, scope, enabled, projectEnabled: false, version: "1.0.0", installPath: `/fake/cache/${id}`,
   installedAt: "2026-01-01T00:00:00Z", lastUpdated: "2026-01-01T00:00:00Z", mcpServers: {},
@@ -47,18 +50,43 @@ describe("setupCommands", () => {
   const brain = REQUIRED.filter((p) => p.id === "brain@brain");
 
   it("adds the marketplace then installs when the marketplace is not listed", () => {
-    expect(setupCommands(brain, market("lean-agent"))).toEqual([
-      "claude plugin marketplace add arnelirobles/brain",
-      "claude plugin install brain@brain --scope user",
+    expect(setupCommands(brain, market("lean-agent"), CLAUDE)).toEqual([
+      `${q} plugin marketplace add arnelirobles/brain`,
+      `${q} plugin install brain@brain --scope user`,
     ]);
   });
 
   it("only installs when the marketplace is listed", () => {
+    expect(setupCommands(brain, market("brain"), CLAUDE)).toEqual([`${q} plugin install brain@brain --scope user`]);
+  });
+
+  it("writes a quote in the path as '\\'' on posix", () => {
+    expect(setupCommands(brain, market("brain"), "/o'neil/claude", "darwin")).toEqual([
+      "'/o'\\''neil/claude' plugin install brain@brain --scope user",
+    ]);
+  });
+
+  it("uses the call operator and single quotes with doubled quotes on win32", () => {
+    expect(setupCommands(brain, market("brain"), "C:\\Program Files\\claude.exe", "win32")).toEqual([
+      "& 'C:\\Program Files\\claude.exe' plugin install brain@brain --scope user",
+    ]);
+    expect(setupCommands(brain, market("brain"), "C:\\a'b\\claude.exe", "win32")).toEqual([
+      "& 'C:\\a''b\\claude.exe' plugin install brain@brain --scope user",
+    ]);
+  });
+
+  it("leaves a dollar sign and a backtick in a win32 path literal", () => {
+    expect(setupCommands(brain, market("brain"), "C:\\$HOME\\`x\\claude.exe", "win32")).toEqual([
+      "& 'C:\\$HOME\\`x\\claude.exe' plugin install brain@brain --scope user",
+    ]);
+  });
+
+  it("falls back to bare claude when no path is given", () => {
     expect(setupCommands(brain, market("brain"))).toEqual(["claude plugin install brain@brain --scope user"]);
   });
 
   it("gives every command for all three with an empty marketplace list", () => {
-    expect(setupCommands(REQUIRED, "[]")).toHaveLength(6);
+    expect(setupCommands(REQUIRED, "[]", CLAUDE)).toHaveLength(6);
   });
 });
 
@@ -129,8 +157,8 @@ describe("checkPlugins", () => {
     expect(f.terminal).toHaveBeenCalledWith("Lean Brain setup");
     expect(f.show).toHaveBeenCalled();
     expect(f.sent).toEqual([
-      "claude plugin marketplace add arnelirobles/brain",
-      "claude plugin install brain@brain --scope user",
+      `${q} plugin marketplace add arnelirobles/brain`,
+      `${q} plugin install brain@brain --scope user`,
       "echo Restart open Claude Code sessions to load the new plugins.",
     ]);
   });

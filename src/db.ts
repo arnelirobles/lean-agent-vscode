@@ -55,14 +55,23 @@ export function itemsMessage(dbs: Dbs): string {
 }
 
 export function queueMessage(dbs: Dbs): string {
-  if (dbs.tests) return "";
-  if (dbs.brain && one(dbs.brain, Q.HAS_JOBS)) return "Run `test-phase queue import` once to move the queue to tests.db.";
+  if (dbs.tests) {
+    // tests.db exists. Without the marker, 1.x jobs that were live in brain.db were refused, not copied.
+    if (!dbs.brain || one(dbs.tests, Q.HAS_COPY_MARKER) || !one(dbs.brain, Q.HAS_JOBS)) return "";
+    const n = Number(one(dbs.brain, Q.LIVE_OLD_JOBS)?.n ?? 0);
+    return n > 0
+      ? `brain.db still holds ${n} queued or running jobs from lean-agent-tools 1.x. Drain them with 1.x, or run \`test-phase queue import --cancel-live\` once.`
+      : "";
+  }
+  if (dbs.brain && one(dbs.brain, Q.HAS_JOBS)) {
+    return "The test queue moved to tests.db in lean-agent-tools 2.0. With 2.0 or later installed, run `test-phase queue import` once.";
+  }
   return "Install lean-agent-tools to see the test queue.";
 }
 
-/** The notes the views show. A missing tests.db is already explained by queueMessage, so its banner is left out. */
+/** The notes the dashboard and the status bar show. The queue message is in them too, since the sidebar queue is not the only place that needs it. */
 export function statusNotes(dbs: Dbs, brainNote: string, testsNote: string, testsMissing: boolean): string {
-  return [brainNote, testsMissing ? "" : testsNote, schemaNote(dbs)].filter(Boolean).join(" ");
+  return [brainNote, testsMissing ? "" : testsNote, dbs.tests || testsMissing ? queueMessage(dbs) : "", schemaNote(dbs)].filter(Boolean).join(" ");
 }
 
 /** Empty when both files are at a schema this extension knows. */

@@ -22,6 +22,10 @@ const WHERE: Record<string, Array<"brain" | "tests">> = {
   QUEUED_JOBS: ["tests"],
   FINISHED_JOBS: ["tests"],
   HAS_JOBS: ["brain"],
+  HAS_COPY_MARKER: ["tests"],
+  // Runs on the jobs table lean-agent-tools 1.x left in brain.db, only after HAS_JOBS finds it.
+  // brain 1.0 never creates that table, so there is no real file to run it on; db.test.ts covers it.
+  LIVE_OLD_JOBS: [],
   HAS_ACTIVITIES: ["brain"],
   ACTIVITY: ["brain"],
   WAITING: ["brain"],

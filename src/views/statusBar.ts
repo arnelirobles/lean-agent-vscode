@@ -11,16 +11,19 @@ export class StatusBar {
     this.item.show();
   }
 
-  update(dbs: db.Dbs, projects: string[], note: string): void {
+  /** getDbs is read on every tick, because a refresh closes the handles it replaces. */
+  update(getDbs: () => db.Dbs, projects: string[], note: string): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    const database = dbs.brain;
-    if (!database) {
+    if (!getDbs().brain) {
       this.item.text = "$(database) brain: none";
       this.item.tooltip = note || "No brain database";
       return;
     }
     const render = () => {
+      const dbs = getDbs();
+      const database = dbs.brain;
+      if (!database) return;
       const now = Math.floor(Date.now() / 1000);
       const { counts, scoped } = db.openCounts(database, projects);
       const running = (dbs.tests ? db.queue(dbs.tests).running : [])[0];
@@ -34,7 +37,8 @@ export class StatusBar {
       this.item.tooltip = `Brain: ${counts.real} real, ${counts.flaky} flaky. ` + (scoped ? `Open items for ${projects.join(" / ")}` : "Open items, all projects") + (note ? `\n${note}` : "");
     };
     render();
-    if (dbs.tests && db.queue(dbs.tests).running.length) this.timer = setInterval(render, 5000);
+    const first = getDbs();
+    if (first.tests && db.queue(first.tests).running.length) this.timer = setInterval(render, 5000);
   }
 
   dispose(): void {

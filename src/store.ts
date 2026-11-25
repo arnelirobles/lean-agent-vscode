@@ -19,10 +19,21 @@ export class Store {
     return this.db;
   }
 
+  /** The table this store's views read. A file with a meta table but not this one is some other database. */
+  private get probeTable(): string {
+    return this.label.startsWith("tests") ? "jobs" : "items";
+  }
+
   private tryLoad(file: string): Database {
     const bytes = fs.readFileSync(file);
     const db = new this.sql!.Database(new Uint8Array(bytes));
-    db.exec("SELECT value FROM meta WHERE key='schema_version'"); // fails if the file is mid-write or not one of ours
+    try {
+      db.exec("SELECT value FROM meta WHERE key='schema_version'"); // fails if the file is mid-write or not one of ours
+      db.exec(`SELECT 1 FROM ${this.probeTable} LIMIT 1`);
+    } catch (e) {
+      db.close();
+      throw e;
+    }
     return db;
   }
 
