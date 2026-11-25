@@ -71,7 +71,7 @@ export function queueMessage(dbs: Dbs): string {
 
 /** The notes the dashboard and the status bar show. The queue message is in them too, since the sidebar queue is not the only place that needs it. */
 export function statusNotes(dbs: Dbs, brainNote: string, testsNote: string, testsMissing: boolean): string {
-  return [brainNote, testsMissing ? "" : testsNote, queueMessage(dbs), schemaNote(dbs)].filter(Boolean).join(" ");
+  return [brainNote, testsMissing ? "" : testsNote, dbs.tests || testsMissing ? queueMessage(dbs) : "", schemaNote(dbs)].filter(Boolean).join(" ");
 }
 
 /** Empty when both files are at a schema this extension knows. */

@@ -28,7 +28,7 @@ export function missingPlugins(pluginListJson: string): Required[] {
 
 /** The claude path quoted for the terminal's shell: PowerShell on win32, a POSIX shell elsewhere. */
 export function quoteForShell(p: string, platform: string = process.platform): string {
-  return platform === "win32" ? `& "${p}"` : `'${p.replace(/'/g, `'\\''`)}'`;
+  return platform === "win32" ? `& '${p.replace(/'/g, "''")}'` : `'${p.replace(/'/g, `'\\''`)}'`;
 }
 
 export function setupCommands(missing: Required[], marketplaceListJson: string, claudePath?: string, platform: string = process.platform): string[] {
