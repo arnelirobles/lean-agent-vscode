@@ -26,7 +26,13 @@ export function missingPlugins(pluginListJson: string): Required[] {
   return REQUIRED.filter((p) => !on.has(p.id));
 }
 
-export function setupCommands(missing: Required[], marketplaceListJson: string): string[] {
+/** The claude path quoted for the terminal's shell: PowerShell on win32, a POSIX shell elsewhere. */
+export function quoteForShell(p: string, platform: string = process.platform): string {
+  return platform === "win32" ? `& "${p}"` : `'${p.replace(/'/g, `'\\''`)}'`;
+}
+
+export function setupCommands(missing: Required[], marketplaceListJson: string, claudePath?: string, platform: string = process.platform): string[] {
+  const claude = claudePath ? quoteForShell(claudePath, platform) : "claude";
   const parsed: unknown = JSON.parse(marketplaceListJson);
   const listed = new Set<string>();
   if (Array.isArray(parsed)) for (const m of parsed) if (m && typeof m === "object") listed.add(String((m as { name?: unknown }).name));
@@ -35,9 +41,9 @@ export function setupCommands(missing: Required[], marketplaceListJson: string):
   for (const p of missing) {
     if (!listed.has(p.marketplace) && !added.has(p.marketplace)) {
       added.add(p.marketplace);
-      lines.push(`claude plugin marketplace add ${p.repo}`);
+      lines.push(`${claude} plugin marketplace add ${p.repo}`);
     }
-    lines.push(`claude plugin install ${p.id} --scope user`);
+    lines.push(`${claude} plugin install ${p.id} --scope user`);
   }
   return lines;
 }
@@ -71,7 +77,7 @@ export async function checkPlugins(host: SetupHost, manual = false): Promise<voi
     if (manual) await host.ask("Lean Brain: lean-agent, lean-agent-tools and brain are installed.");
     return;
   }
-  const commands = setupCommands(missing, markets);
+  const commands = setupCommands(missing, markets, host.claude);
   const text = `Lean Brain needs ${names(missing)}.`;
   if (!host.claude) {
     if (await host.ask(text, "Copy commands", "Not now") === "Copy commands") await host.copy(commands.join("\n"));

@@ -26,6 +26,8 @@ export const FINISHED_JOBS = `
   FROM jobs WHERE status IN ('done','failed','cancelled') ORDER BY COALESCE(ended_at, enqueued_at) DESC, id DESC LIMIT 10`;
 
 export const HAS_JOBS = `SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='jobs'`;
+export const HAS_COPY_MARKER = `SELECT 1 AS x FROM meta WHERE key='copied_from_brain'`;
+export const LIVE_OLD_JOBS = `SELECT count(*) AS n FROM jobs WHERE status IN ('queued','running')`;
 export const HAS_ACTIVITIES = `SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='activities'`;
 
 export const ACTIVITY = `

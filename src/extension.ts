@@ -45,14 +45,18 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   };
   const refresh = async (): Promise<void> => {
     await Promise.all([brainStore.refresh(dbPath()), testsStore.refresh(testsDbPath())]);
-    dashboard.canMove = await canMove();
-    void vscode.commands.executeCommand("setContext", "leanBrain.canMove", dashboard.canMove);
-    const d = dbs();
-    status.update(d, projects, notes());
-    items.setData(d);
-    queueTree.setData(d);
-    dashboard.render(d, notes());
-    itemPanel.render(d);
+    try {
+      dashboard.canMove = await canMove();
+      void vscode.commands.executeCommand("setContext", "leanBrain.canMove", dashboard.canMove);
+      const d = dbs();
+      status.update(dbs, projects, notes());
+      items.setData(d);
+      queueTree.setData(d);
+      dashboard.render(d, notes());
+      itemPanel.render(d);
+    } catch (e) {
+      log.appendLine(`refresh failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
   const claude = new ClaudeTerminal(() => userSetting("claudeCommand"), () => folder);
   const ask = (id: number) => {
@@ -208,7 +212,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   async function routeJob(id: number, to: "remote" | "local" | "any"): Promise<void> {
     const tp = findTestPhaseOrWarn();
     if (!tp) return;
-    const r = await cli.runTestPhase(tp, cli.routeArgs(id, to), testsDbPath(), folder);
+    const r = await cli.runTestPhase(tp, cli.routeArgs(id, to), testsDbPath(), folder, dbPath());
     if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${cli.unprefix(r.stderr)}`);
     else if (r.stderr.trim()) void vscode.window.showWarningMessage(r.stderr.trim());
     await refresh();
@@ -223,7 +227,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   async function moveJob(id: number, where: "up" | "down"): Promise<void> {
     const tp = findTestPhaseOrWarn();
     if (!tp) return;
-    const r = await cli.runTestPhase(tp, cli.moveArgs(id, where), testsDbPath(), folder);
+    const r = await cli.runTestPhase(tp, cli.moveArgs(id, where), testsDbPath(), folder, dbPath());
     if (!r.ok) void vscode.window.showErrorMessage(`test-phase: ${cli.unprefix(r.stderr)}`);
     await refresh();
   }
