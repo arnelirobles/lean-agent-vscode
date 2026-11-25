@@ -252,21 +252,48 @@ describe("reading brain.db and tests.db", () => {
     expect(db.schemaNote(dbs)).toBe("brain.db is newer than this extension knows. Update Lean Brain.");
   });
 
-  it("tells an upgrader to import the queue when tests.db is missing and brain.db still has jobs", async () => {
+  it("tells an upgrader to use 2.0 and import once when tests.db is missing and brain.db still has jobs", async () => {
     const brain = await brainDb();
     brain.run("CREATE TABLE jobs (id INTEGER PRIMARY KEY)");
-    expect(db.queueMessage({ brain })).toBe("Run `test-phase queue import` once to move the queue to tests.db.");
+    expect(db.queueMessage({ brain })).toBe(
+      "The test queue moved to tests.db in lean-agent-tools 2.0. With 2.0 or later installed, run `test-phase queue import` once.");
+  });
+
+  it("says brain.db still holds live 1.x jobs when tests.db exists without the copied_from_brain marker", async () => {
+    const brain = await brainDb();
+    brain.run("CREATE TABLE jobs (id INTEGER PRIMARY KEY, status TEXT NOT NULL)");
+    brain.run("INSERT INTO jobs (status) VALUES ('queued'), ('running'), ('done')");
+    const tests = await testsDb();
+    expect(db.queueMessage({ brain, tests })).toBe(
+      "brain.db still holds 2 queued or running jobs from lean-agent-tools 1.x. Drain them with 1.x, or run `test-phase queue import --cancel-live` once.");
+  });
+
+  it("says nothing once tests.db has the copied_from_brain marker, or when brain.db has no live jobs or no jobs table", async () => {
+    const brain = await brainDb();
+    const tests = await testsDb();
+    expect(db.queueMessage({ brain, tests })).toBe("");
+    brain.run("CREATE TABLE jobs (id INTEGER PRIMARY KEY, status TEXT NOT NULL)");
+    brain.run("INSERT INTO jobs (status) VALUES ('done'), ('cancelled')");
+    expect(db.queueMessage({ brain, tests })).toBe("");
+    brain.run("INSERT INTO jobs (status) VALUES ('queued')");
+    tests.run("INSERT INTO meta VALUES ('copied_from_brain','1')");
+    expect(db.queueMessage({ brain, tests })).toBe("");
   });
 
   it("keeps the install message when tests.db is missing and brain.db has no jobs table", async () => {
     expect(db.queueMessage({ brain: await brainDb() })).toBe("Install lean-agent-tools to see the test queue.");
   });
 
-  it("drops the tests.db banner when the queue view already explains it, and keeps brain's note", () => {
+  it("adds the queue message to the notes so the dashboard and status bar show it", () => {
     const notes = db.statusNotes;
     const banner = "No tests.db database at /x/tests.db.";
-    expect(notes({}, "No brain.db database at /x/brain.db.", banner, true)).toBe("No brain.db database at /x/brain.db.");
-    expect(notes({}, "", banner, true)).toBe("");
-    expect(notes({}, "", "The tests.db database could not be read (boom).", false)).toBe("The tests.db database could not be read (boom).");
+    const install = "Install lean-agent-tools to see the test queue.";
+    expect(notes({}, "No brain.db database at /x/brain.db.", banner, true)).toBe(`No brain.db database at /x/brain.db. ${install}`);
+    expect(notes({}, "", banner, true)).toBe(install);
+    expect(notes({}, "", "The tests.db database could not be read (boom).", false)).toBe(`The tests.db database could not be read (boom). ${install}`);
+  });
+
+  it("leaves the notes without a queue line when the queue view has no message", async () => {
+    expect(db.statusNotes(await seededDbs(), "", "", false)).toBe("");
   });
 });

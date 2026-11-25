@@ -21,8 +21,9 @@ describe("brain cli", () => {
     expect(routeArgs(7, "any")).toEqual(["queue", "route", "7", "--to", "any"]);
     expect(moveArgs(7, "up")).toEqual(["queue", "move", "7", "up"]);
     expect(moveArgs(7, "down")).toEqual(["queue", "move", "7", "down"]);
-    expect(answerArgs(7, "use 8080\nnot 80", false)).toEqual(["close", "7", "--resolution", "answered", "--note", "use 8080\nnot 80"]);
-    expect(answerArgs(7, "yes", true)).toEqual(["close", "7", "--resolution", "answered", "--note", "yes", "--delivered"]);
+    expect(answerArgs(7, "use 8080\nnot 80", false)).toEqual(["close", "7", "--resolution", "answered", "--note=use 8080\nnot 80"]);
+    expect(answerArgs(7, "--skip", false)).toEqual(["close", "7", "--resolution", "answered", "--note=--skip"]);
+    expect(answerArgs(7, "yes", true)).toEqual(["close", "7", "--resolution", "answered", "--note=yes", "--delivered"]);
   });
 
   it("db path: setting, then LEAN_BRAIN_DB, then the default", () => {
@@ -99,6 +100,34 @@ describe("brain cli", () => {
     expect(missing.ok).toBe(false);
   });
 
+  it("passes LEAN_BRAIN_DB to test-phase when given a brain db path", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lb-"));
+    const tp = path.join(dir, "test-phase");
+    fs.writeFileSync(tp, '#!/bin/sh\necho "brain=$LEAN_BRAIN_DB tests=$LEAN_TESTS_DB"\n');
+    fs.chmodSync(tp, 0o755);
+    const r = await runTestPhase(tp, ["queue"], "/t/tests.db", undefined, "/t/brain.db");
+    expect(r.stdout.trim()).toBe("brain=/t/brain.db tests=/t/tests.db");
+    const src = fs.readFileSync(path.join(__dirname, "..", "src", "extension.ts"), "utf8");
+    expect(src.match(/cli\.runTestPhase\([^\n]*dbPath\(\)/g)?.length).toBe(2);
+  });
+
+  it("skips relative PATH entries when looking for a tool", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "lb-"));
+    const cwd = process.cwd();
+    const rel = fs.mkdtempSync(path.join(os.tmpdir(), "lb-rel-"));
+    exe(path.join(rel, "bin", "brain"));
+    exe(path.join(rel, "bin", "test-phase"));
+    try {
+      process.chdir(rel);
+      expect(findBrain("", { PATH: "bin" }, home)).toBeUndefined();
+      expect(findTestPhase("", { PATH: `.${path.delimiter}bin` }, home)).toBeUndefined();
+      const abs = path.join(rel, "bin");
+      expect(findBrain("", { PATH: `bin${path.delimiter}${abs}` }, home)).toBe(path.join(abs, "brain"));
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
   it("the extension sends move and route to test-phase, not brain", () => {
     const src = fs.readFileSync(path.join(__dirname, "..", "src", "extension.ts"), "utf8");
     const body = (name: string) => src.slice(src.indexOf(`async function ${name}(`)).split(/\n  }\n/)[0];
@@ -107,6 +136,13 @@ describe("brain cli", () => {
       expect(body(fn)).not.toContain("runBrain");
     }
     expect(src).not.toContain("brainCanMove");
+  });
+
+  it("refresh catches a failing view update and logs it, and the status bar gets the getter", () => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "src", "extension.ts"), "utf8");
+    const body = src.slice(src.indexOf("const refresh = async"), src.indexOf("const claude = new ClaudeTerminal"));
+    expect(body).toMatch(/try \{[\s\S]*status\.update\([\s\S]*\} catch \(e\) \{[\s\S]*log\.appendLine/);
+    expect(body).toContain("status.update(dbs,");
   });
 
   it("strips one leading test-phase: so the caller's own prefix shows once", () => {
