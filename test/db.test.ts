@@ -290,7 +290,11 @@ describe("reading brain.db and tests.db", () => {
     const install = "Install lean-agent-tools to see the test queue.";
     expect(notes({}, "No brain.db database at /x/brain.db.", banner, true)).toBe(`No brain.db database at /x/brain.db. ${install}`);
     expect(notes({}, "", banner, true)).toBe(install);
-    expect(notes({}, "", "The tests.db database could not be read (boom).", false)).toBe(`The tests.db database could not be read (boom). ${install}`);
+  });
+
+  it("does not say to install lean-agent-tools when tests.db exists but could not be read", () => {
+    const note = "The tests.db database could not be read (boom).";
+    expect(db.statusNotes({}, "", note, false)).toBe(note);
   });
 
   it("leaves the notes without a queue line when the queue view has no message", async () => {

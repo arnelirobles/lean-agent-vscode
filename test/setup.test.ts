@@ -66,9 +66,18 @@ describe("setupCommands", () => {
     ]);
   });
 
-  it("uses the call operator and double quotes on win32", () => {
+  it("uses the call operator and single quotes with doubled quotes on win32", () => {
     expect(setupCommands(brain, market("brain"), "C:\\Program Files\\claude.exe", "win32")).toEqual([
-      '& "C:\\Program Files\\claude.exe" plugin install brain@brain --scope user',
+      "& 'C:\\Program Files\\claude.exe' plugin install brain@brain --scope user",
+    ]);
+    expect(setupCommands(brain, market("brain"), "C:\\a'b\\claude.exe", "win32")).toEqual([
+      "& 'C:\\a''b\\claude.exe' plugin install brain@brain --scope user",
+    ]);
+  });
+
+  it("leaves a dollar sign and a backtick in a win32 path literal", () => {
+    expect(setupCommands(brain, market("brain"), "C:\\$HOME\\`x\\claude.exe", "win32")).toEqual([
+      "& 'C:\\$HOME\\`x\\claude.exe' plugin install brain@brain --scope user",
     ]);
   });
 
